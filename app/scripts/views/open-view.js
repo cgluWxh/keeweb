@@ -187,6 +187,28 @@ class OpenView extends View {
         return null;
     }
 
+    getRememberedKeyFile(fileInfo) {
+        if (!fileInfo.keyFileName) {
+            return { keyFileName: null, keyFilePath: null };
+        }
+        switch (this.model.settings.rememberKeyFiles) {
+            case 'data':
+                if (fileInfo.keyFileHash) {
+                    return { keyFileName: fileInfo.keyFileName, keyFilePath: null };
+                }
+                break;
+            case 'path':
+                if (fileInfo.keyFilePath) {
+                    return {
+                        keyFileName: fileInfo.keyFileName,
+                        keyFilePath: fileInfo.keyFilePath
+                    };
+                }
+                break;
+        }
+        return { keyFileName: null, keyFilePath: null };
+    }
+
     showLocalFileAlert() {
         if (this.model.settings.skipOpenLocalWarn) {
             return;
@@ -608,8 +630,9 @@ class OpenView extends View {
         this.params.name = fileInfo.name;
         this.params.fileData = null;
         this.params.rev = null;
-        this.params.keyFileName = fileInfo.keyFileName;
-        this.params.keyFilePath = fileInfo.keyFilePath;
+        const rememberedKeyFile = this.getRememberedKeyFile(fileInfo);
+        this.params.keyFileName = rememberedKeyFile.keyFileName;
+        this.params.keyFilePath = rememberedKeyFile.keyFilePath;
         this.params.keyFileData = null;
         this.params.opts = fileInfo.opts;
         this.params.chalResp = fileInfo.chalResp;

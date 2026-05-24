@@ -696,14 +696,18 @@ class AppModel {
         const logger = new Logger('open', params.name);
         let needLoadKeyFile = false;
         if (!params.keyFileData && fileInfo && fileInfo.keyFileName) {
-            params.keyFileName = fileInfo.keyFileName;
             if (this.settings.rememberKeyFiles === 'data' && fileInfo.keyFileHash) {
+                params.keyFileName = fileInfo.keyFileName;
                 params.keyFileData = FileModel.createKeyFileWithHash(fileInfo.keyFileHash);
             } else if (this.settings.rememberKeyFiles === 'path' && fileInfo.keyFilePath) {
+                params.keyFileName = fileInfo.keyFileName;
                 params.keyFilePath = fileInfo.keyFilePath;
                 if (Storage.file.enabled) {
                     needLoadKeyFile = true;
                 }
+            } else {
+                params.keyFileName = null;
+                params.keyFilePath = null;
             }
         } else if (params.keyFilePath && !params.keyFileData && !fileInfo) {
             needLoadKeyFile = true;
@@ -819,11 +823,14 @@ class AppModel {
                     keyFileHash: file.getKeyFileHash()
                 });
                 break;
-            case 'path':
+            case 'path': {
+                const keyFilePath = file.keyFilePath || null;
                 fileInfo.set({
-                    keyFileName: file.keyFileName || null,
-                    keyFilePath: file.keyFilePath || null
+                    keyFileName: keyFilePath ? file.keyFileName || null : null,
+                    keyFilePath
                 });
+                break;
+            }
         }
         if (this.settings.deviceOwnerAuth === 'file' && file.encryptedPassword) {
             const maxDate = new Date(file.encryptedPasswordDate);
