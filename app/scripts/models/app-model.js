@@ -20,6 +20,7 @@ import { DateFormat } from 'comp/i18n/date-format';
 import { Launcher } from 'comp/launcher';
 import { UrlFormat } from 'util/formatting/url-format';
 import { IdGenerator } from 'util/generators/id-generator';
+import { decryptKeyFileHash, encryptKeyFileHash } from 'util/data/key-file-cache-crypto';
 import { Locale } from 'util/locale';
 import { Logger } from 'util/logger';
 import { noop } from 'util/fn';
@@ -695,10 +696,18 @@ class AppModel {
     openFileWithData(params, callback, fileInfo, data, updateCacheOnSuccess) {
         const logger = new Logger('open', params.name);
         let needLoadKeyFile = false;
+        let needDecryptKeyFileHash = false;
         if (!params.keyFileData && fileInfo && fileInfo.keyFileName) {
-            if (this.settings.rememberKeyFiles === 'data' && fileInfo.keyFileHash) {
+            if (
+                this.settings.rememberKeyFiles === 'data' &&
+                (fileInfo.keyFileHash || fileInfo.keyFileHashEncrypted)
+            ) {
                 params.keyFileName = fileInfo.keyFileName;
-                params.keyFileData = FileModel.createKeyFileWithHash(fileInfo.keyFileHash);
+                if (fileInfo.keyFileHashEncrypted) {
+                    needDecryptKeyFileHash = true;
+                } else {
+                    params.keyFileData = FileModel.createKeyFileWithHash(fileInfo.keyFileHash);
+                }
             } else if (this.settings.rememberKeyFiles === 'path' && fileInfo.keyFilePath) {
                 params.keyFileName = fileInfo.keyFileName;
                 params.keyFilePath = fileInfo.keyFilePath;
@@ -750,15 +759,30 @@ class AppModel {
             }
             const rev = params.rev || (fileInfo && fileInfo.rev);
             this.setFileOpts(file, params.opts);
-            this.addToLastOpenFiles(file, rev);
-            this.addFile(file);
-            callback(null, file);
-            this.fileOpened(file, data, params);
+            this.addToLastOpenFiles(file, rev, params)
+                .catch((err) => {
+                    logger.error('Error saving key file cache', err);
+                })
+                .then(() => {
+                    this.addFile(file);
+                    callback(null, file);
+                    this.fileOpened(file, data, params);
+                });
         };
         const open = () => {
             file.open(params.password, data, params.keyFileData, openComplete);
         };
-        if (needLoadKeyFile) {
+        if (needDecryptKeyFileHash) {
+            decryptKeyFileHash(fileInfo.keyFileHashEncrypted, params.password)
+                .then((keyFileHash) => {
+                    params.keyFileData = FileModel.createKeyFileWithHash(keyFileHash);
+                    open();
+                })
+                .catch((err) => {
+                    logger.info('Error decrypting key file cache', err);
+                    open();
+                });
+        } else if (needLoadKeyFile) {
             Storage.file.load(params.keyFilePath, {}, (err, data) => {
                 if (err) {
                     logger.info('Storage load error', err);
@@ -792,7 +816,7 @@ class AppModel {
         });
     }
 
-    addToLastOpenFiles(file, rev) {
+    async addToLastOpenFiles(file, rev, params) {
         this.appLogger.debug(
             'Add last open file',
             file.id,
@@ -817,12 +841,26 @@ class AppModel {
             chalResp: file.chalResp
         });
         switch (this.settings.rememberKeyFiles) {
-            case 'data':
+            case 'data': {
+                const keyFileHash = file.getKeyFileHash();
+                let keyFileHashEncrypted = null;
+                if (keyFileHash && params?.password) {
+                    try {
+                        keyFileHashEncrypted = await encryptKeyFileHash(
+                            keyFileHash,
+                            params.password
+                        );
+                    } catch (e) {
+                        this.appLogger.error('Error encrypting key file cache', e);
+                    }
+                }
                 fileInfo.set({
                     keyFileName: file.keyFileName || null,
-                    keyFileHash: file.getKeyFileHash()
+                    keyFileHash: null,
+                    keyFileHashEncrypted
                 });
                 break;
+            }
             case 'path': {
                 const keyFilePath = file.keyFilePath || null;
                 fileInfo.set({
@@ -959,6 +997,8 @@ class AppModel {
                 return callback && callback('File is closed');
             }
             logger.info('Sync finished', err || 'no error');
+            const passwordChanged = file.passwordChanged;
+            const keyFileChanged = file.keyFileChanged;
             file.setSyncComplete(path, storage, err ? err.toString() : null);
             fileInfo.set({
                 name: file.name,
@@ -971,9 +1011,14 @@ class AppModel {
                 chalResp: file.chalResp
             });
             if (this.settings.rememberKeyFiles === 'data') {
+                const keyFileHashEncrypted =
+                    fileInfo.keyFileName === file.keyFileName && !passwordChanged && !keyFileChanged
+                        ? fileInfo.keyFileHashEncrypted || null
+                        : null;
                 fileInfo.set({
                     keyFileName: file.keyFileName || null,
-                    keyFileHash: file.getKeyFileHash()
+                    keyFileHash: null,
+                    keyFileHashEncrypted
                 });
             }
             if (!this.fileInfos.get(fileInfo.id)) {
@@ -1183,7 +1228,8 @@ class AppModel {
             fileInfo.set({
                 keyFileName: null,
                 keyFilePath: null,
-                keyFileHash: null
+                keyFileHash: null,
+                keyFileHashEncrypted: null
             });
         }
         this.fileInfos.save();
@@ -1194,7 +1240,8 @@ class AppModel {
         fileInfo.set({
             keyFileName: null,
             keyFilePath: null,
-            keyFileHash: null
+            keyFileHash: null,
+            keyFileHashEncrypted: null
         });
         this.fileInfos.save();
     }

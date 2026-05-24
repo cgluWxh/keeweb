@@ -13,6 +13,7 @@ const DefaultProperties = {
     openDate: null,
     keyFileName: null,
     keyFileHash: null,
+    keyFileHashEncrypted: null,
     keyFilePath: null,
     opts: null,
     backup: null,

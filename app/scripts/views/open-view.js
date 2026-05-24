@@ -193,7 +193,7 @@ class OpenView extends View {
         }
         switch (this.model.settings.rememberKeyFiles) {
             case 'data':
-                if (fileInfo.keyFileHash) {
+                if (fileInfo.keyFileHash || fileInfo.keyFileHashEncrypted) {
                     return { keyFileName: fileInfo.keyFileName, keyFilePath: null };
                 }
                 break;
