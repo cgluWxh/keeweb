@@ -110,6 +110,7 @@
     "keytar": "^7.7.0"
   },
   "scripts": {
+    "build-web": "cross-env NODE_OPTIONS=--openssl-legacy-provider grunt",
     "start": "grunt",
     "lint": "grunt eslint",
     "test": "cross-env NODE_OPTIONS=--openssl-legacy-provider grunt test",
