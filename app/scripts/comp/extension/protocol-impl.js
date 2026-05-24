@@ -429,18 +429,9 @@ async function selectEntryForPasskeySave(files, payload) {
     });
 
     if (mode === 'existing') {
-        const entries = [];
-        for (const file of files) {
-            file.forEachEntry({ includeDisabled: true }, (entry) => entries.push(entry));
-        }
-        entries.get = (id) => entries.find((entry) => entry.id === id);
+        const filter = new SelectEntryFilter({}, appModel, files, { includeDisabled: true });
         const selectEntryView = new SelectEntryView({
-            filter: {
-                text: '',
-                getEntries() {
-                    return entries;
-                }
-            },
+            filter,
             topMessage: `Save passkey to existing entry for ${
                 payload.publicKey.rp?.id || new URL(payload.origin).hostname
             }`

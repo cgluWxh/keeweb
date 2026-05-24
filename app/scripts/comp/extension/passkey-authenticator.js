@@ -13,6 +13,7 @@ const PasskeyFields = {
 
 const PasskeyErrors = {
     noMatches: '15',
+    attestationNotSupported: '20',
     credentialExcluded: '21',
     invalidUrl: '25',
     originNotAllowed: '26',
@@ -89,6 +90,9 @@ async function createRegistrationResponse(publicKey, origin) {
     if (!publicKey?.user?.id) {
         throw makePasskeyError(PasskeyErrors.invalidChallenge);
     }
+    // if (publicKey.attestation && publicKey.attestation !== 'none') {
+    //     throw makePasskeyError(PasskeyErrors.attestationNotSupported);
+    // }
 
     const rpId = resolveRpId(
         { rpId: publicKey.rp?.id, relatedOrigins: publicKey.relatedOrigins },
