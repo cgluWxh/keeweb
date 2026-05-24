@@ -1,4 +1,5 @@
 import * as kdbxweb from 'kdbxweb';
+import { parse as parsePublicSuffix } from 'psl';
 
 const PasskeyFields = {
     credentialId: 'KPEX_PASSKEY_CREDENTIAL_ID',
@@ -153,18 +154,18 @@ async function createRegistrationResponse(publicKey, origin) {
 }
 
 function resolveRpId(publicKey, origin) {
-    const effectiveDomain = getEffectiveDomain(origin);
-    const rpId = publicKey?.rpId || effectiveDomain;
-    validateRpId(rpId, effectiveDomain, origin, publicKey?.relatedOrigins || []);
+    const originInfo = getOriginInfo(origin);
+    const rpId = canonicalizeDomain(publicKey?.rpId || originInfo.hostname);
+    validateRpId(rpId, originInfo, publicKey?.relatedOrigins || []);
     return rpId;
 }
 
 function validateOrigin(origin, rpId, relatedOrigins = []) {
-    const effectiveDomain = getEffectiveDomain(origin);
-    validateRpId(rpId, effectiveDomain, origin, relatedOrigins);
+    const originInfo = getOriginInfo(origin);
+    validateRpId(canonicalizeDomain(rpId), originInfo, relatedOrigins);
 }
 
-function getEffectiveDomain(origin) {
+function getOriginInfo(origin) {
     let url;
     try {
         url = new URL(origin);
@@ -176,28 +177,31 @@ function getEffectiveDomain(origin) {
         throw makePasskeyError(PasskeyErrors.originNotAllowed);
     }
 
-    const host = url.hostname.toLowerCase();
-    if (!isDomain(host)) {
+    if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
         throw makePasskeyError(PasskeyErrors.invalidUrl);
     }
-    return host;
+
+    const hostname = canonicalizeDomain(url.hostname);
+    if (!hostname) {
+        throw makePasskeyError(PasskeyErrors.invalidUrl);
+    }
+    return { origin: url.origin, hostname };
 }
 
-function validateRpId(rpId, effectiveDomain, origin, relatedOrigins) {
-    rpId = (rpId || '').toLowerCase();
-    if (!isDomain(rpId)) {
+function validateRpId(rpId, originInfo, relatedOrigins) {
+    if (!rpId) {
         throw makePasskeyError(PasskeyErrors.rpIdMismatch);
     }
 
-    if (rpId === effectiveDomain) {
+    if (rpId === originInfo.hostname) {
         return;
     }
 
-    if (relatedOrigins.includes(origin) && !isPublicSuffix(rpId)) {
+    if (isRelatedOriginAllowed(originInfo.origin, relatedOrigins) && !isPublicSuffix(rpId)) {
         return;
     }
 
-    if (!isRegistrableDomainSuffix(rpId, effectiveDomain)) {
+    if (!isRegistrableDomainSuffix(rpId, originInfo.hostname)) {
         throw makePasskeyError(PasskeyErrors.rpIdMismatch);
     }
 }
@@ -209,29 +213,62 @@ function isRegistrableDomainSuffix(rpId, effectiveDomain) {
     return !isPublicSuffix(rpId);
 }
 
-function isDomain(host) {
+function isRelatedOriginAllowed(origin, relatedOrigins) {
+    return relatedOrigins.some((relatedOrigin) => {
+        try {
+            return getOriginInfo(relatedOrigin).origin === origin;
+        } catch {
+            return false;
+        }
+    });
+}
+
+function canonicalizeDomain(host) {
+    if (!host) {
+        return '';
+    }
+    let url;
+    try {
+        url = new URL(`https://${host}`);
+    } catch {
+        return '';
+    }
+    if (
+        url.username ||
+        url.password ||
+        url.pathname !== '/' ||
+        url.search ||
+        url.hash ||
+        url.port
+    ) {
+        return '';
+    }
+    const hostname = url.hostname.toLowerCase();
+    if (!isDomain(hostname)) {
+        return '';
+    }
+    return hostname;
+}
+
+function isDomain(hostname) {
     return (
-        /^[a-z0-9.-]+$/i.test(host) &&
-        !host.endsWith('.') &&
-        host.includes('.') &&
-        !isIpAddress(host) &&
-        host.split('.').every((label) => label && !label.startsWith('-') && !label.endsWith('-'))
+        /^[a-z0-9.-]+$/i.test(hostname) &&
+        !hostname.endsWith('.') &&
+        hostname.includes('.') &&
+        !isIpAddress(hostname) &&
+        hostname
+            .split('.')
+            .every((label) => label && !label.startsWith('-') && !label.endsWith('-'))
     );
 }
 
-function isIpAddress(host) {
-    return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+function isIpAddress(hostname) {
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(':');
 }
 
-function isPublicSuffix(host) {
-    const labels = host.split('.');
-    if (labels.length <= 1) {
-        return true;
-    }
-    if (labels.length === 2 && CommonSecondLevelPublicSuffixes.has(labels.join('.'))) {
-        return true;
-    }
-    return labels.length === 1;
+function isPublicSuffix(hostname) {
+    const parsed = parsePublicSuffix(hostname);
+    return Boolean(parsed.error || !parsed.domain);
 }
 
 function isAllowedCredential(cred) {
@@ -511,39 +548,6 @@ function makePasskeyError(code) {
     err.passkeyErrorCode = code;
     return err;
 }
-
-const CommonSecondLevelPublicSuffixes = new Set([
-    'github.io',
-    'pages.dev',
-    'workers.dev',
-    'web.app',
-    'firebaseapp.com',
-    'vercel.app',
-    'netlify.app',
-    'herokuapp.com',
-    'cloudfront.net',
-    'appspot.com',
-    'glitch.me',
-    'repl.co',
-    'fly.dev',
-    'surge.sh',
-    'co.uk',
-    'org.uk',
-    'ac.uk',
-    'gov.uk',
-    'co.jp',
-    'ne.jp',
-    'or.jp',
-    'com.au',
-    'net.au',
-    'org.au',
-    'com.br',
-    'com.cn',
-    'com.hk',
-    'com.sg',
-    'co.nz',
-    'co.kr'
-]);
 
 export {
     PasskeyErrors,
