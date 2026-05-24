@@ -29,7 +29,7 @@ const OneDriveApps = {
         id: 'b97c53d5-db5b-4124-aab9-d39195293815'
     },
     Production: {
-        id: 'bbc74d1b-3a9c-46e6-9da4-4c645e830923'
+        id: 'de1385ac-3327-4fa5-b1f2-626f5dc7cf97'
     },
     Desktop: {
         id: 'bbc74d1b-3a9c-46e6-9da4-4c645e830923',
