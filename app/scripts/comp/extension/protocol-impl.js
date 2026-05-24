@@ -17,12 +17,21 @@ import { Timeouts } from 'const/timeouts';
 import { SelectEntryView } from 'views/select/select-entry-view';
 import { SelectEntryFieldView } from 'views/select/select-entry-field-view';
 import { SelectEntryFilter } from 'comp/app/select-entry-filter';
+import {
+    PasskeyErrors,
+    createAssertionResponse,
+    createRegistrationResponse,
+    findMatchingPasskeys,
+    passkeyToEntryFields,
+    validateOrigin
+} from 'comp/extension/passkey-authenticator';
 
 const KeeWebAssociationId = 'KeeWeb';
 const KeeWebHash = '398d9c782ec76ae9e9877c2321cbda2b31fc6d18ccf0fed5ca4bd746bab4d64a'; // sha256('KeeWeb')
 const ExtensionGroupIconId = 1;
 const DefaultExtensionGroupName = 'Browser';
 const ExtensionGroupNames = new Set(['KeePassXC-Browser Passwords', DefaultExtensionGroupName]);
+const PasskeyEntryTag = 'Passkey';
 
 const Errors = {
     noOpenFiles: {
@@ -364,6 +373,109 @@ async function findEntry(request, returnIfOneMatch, filterOptions) {
     return entry;
 }
 
+async function selectPasskey(passkeys, payload) {
+    if (passkeys.length === 1) {
+        return passkeys[0];
+    }
+
+    const entries = passkeys.map((passkey) => passkey.entry);
+    entries.get = (id) => entries.find((entry) => entry.id === id);
+
+    const selectEntryView = new SelectEntryView({
+        filter: {
+            text: '',
+            getEntries() {
+                return entries;
+            }
+        },
+        topMessage: `Select passkey for ${
+            payload.publicKey?.rpId || new URL(payload.origin).hostname
+        }`
+    });
+
+    focusKeeWeb();
+
+    const inactivityTimer = setTimeout(() => {
+        selectEntryView.emit('result', undefined);
+    }, Timeouts.KeeWebConnectRequest);
+
+    const result = await selectEntryView.showAndGetResult();
+
+    clearTimeout(inactivityTimer);
+
+    const entry = result?.entry;
+    if (!entry) {
+        return undefined;
+    }
+
+    return passkeys.find((passkey) => passkey.entry.id === entry.id);
+}
+
+async function selectEntryForPasskeySave(files, payload) {
+    const mode = await new Promise((resolve, reject) => {
+        const alert = Alerts.alert({
+            header: 'Save passkey',
+            icon: 'key',
+            body: `${payload.origin}\n${payload.publicKey.user?.name || ''}`,
+            buttons: [
+                { result: 'new', title: 'New entry' },
+                { result: 'existing', title: 'Existing entry' },
+                Alerts.buttons.deny
+            ],
+            success: (result) => resolve(result),
+            cancel: () => reject(makeError(Errors.userRejected))
+        });
+        setTimeout(() => alert.closeWithResult(''), Timeouts.KeeWebConnectRequest);
+    });
+
+    if (mode === 'existing') {
+        const entries = [];
+        for (const file of files) {
+            file.forEachEntry({ includeDisabled: true }, (entry) => entries.push(entry));
+        }
+        entries.get = (id) => entries.find((entry) => entry.id === id);
+        const selectEntryView = new SelectEntryView({
+            filter: {
+                text: '',
+                getEntries() {
+                    return entries;
+                }
+            },
+            topMessage: `Save passkey to existing entry for ${
+                payload.publicKey.rp?.id || new URL(payload.origin).hostname
+            }`
+        });
+        focusKeeWeb();
+        const inactivityTimer = setTimeout(() => {
+            selectEntryView.emit('result', undefined);
+        }, Timeouts.KeeWebConnectRequest);
+        const result = await selectEntryView.showAndGetResult();
+        clearTimeout(inactivityTimer);
+        return { entry: result?.entry };
+    }
+
+    const groups = [];
+    for (const file of files) {
+        file.forEachGroup((group) => {
+            groups.push({
+                id: group.id,
+                fileId: file.id,
+                title: `${file.name} / ${group.title}`,
+                group
+            });
+        });
+    }
+    return { group: groups[0]?.group };
+}
+
+function addPasskeyTag(entry) {
+    const tags = entry.tags || [];
+    if (!tags.some((tag) => tag.toLowerCase() === PasskeyEntryTag.toLowerCase())) {
+        entry.setTags(tags.concat(PasskeyEntryTag));
+        appModel.updateTags();
+    }
+}
+
 const ProtocolHandlers = {
     'ping'({ data }) {
         return { data };
@@ -582,6 +694,175 @@ const ProtocolHandlers = {
         await checkContentRequestPermissions(request);
 
         throw new Error('Not implemented');
+    },
+
+    async 'passkeys-get'(request) {
+        const payload = decryptRequest(request);
+        await checkContentRequestPermissions(request);
+
+        try {
+            validateOrigin(
+                payload.origin,
+                payload.publicKey?.rpId || new URL(payload.origin).hostname,
+                payload.publicKey?.relatedOrigins || []
+            );
+        } catch (e) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: e.passkeyErrorCode || PasskeyErrors.unknown }
+            });
+        }
+
+        const files = getAvailableFiles(request);
+        const passkeys = findMatchingPasskeys(files, payload.publicKey, payload.origin);
+
+        if (!passkeys.length) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: PasskeyErrors.noMatches }
+            });
+        }
+
+        focusKeeWeb();
+
+        const passkey = await selectPasskey(passkeys, payload);
+        if (!passkey) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: '22' }
+            });
+        }
+        try {
+            await alertWithTimeout({
+                header: 'Use passkey',
+                icon: 'key',
+                buttons: [Alerts.buttons.allow, Alerts.buttons.deny],
+                body: `${payload.origin}\n${passkey.username || passkey.rpId}`
+            });
+        } catch {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: '22' }
+            });
+        }
+
+        try {
+            const response = await createAssertionResponse(
+                passkey,
+                payload.publicKey,
+                payload.origin
+            );
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response
+            });
+        } catch (e) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: {
+                    errorCode: e.passkeyErrorCode || PasskeyErrors.unknown
+                }
+            });
+        }
+    },
+
+    async 'passkeys-register'(request) {
+        const payload = decryptRequest(request);
+        await checkContentRequestPermissions(request);
+
+        try {
+            validateOrigin(
+                payload.origin,
+                payload.publicKey?.rp?.id || new URL(payload.origin).hostname,
+                payload.publicKey?.relatedOrigins || []
+            );
+        } catch (e) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: e.passkeyErrorCode || PasskeyErrors.unknown }
+            });
+        }
+
+        const files = getAvailableFiles(request);
+        const excludeMatches = findMatchingPasskeys(
+            files,
+            {
+                rpId: payload.publicKey.rp?.id,
+                allowCredentials: payload.publicKey.excludeCredentials || [],
+                relatedOrigins: payload.publicKey.relatedOrigins || []
+            },
+            payload.origin
+        );
+
+        if (excludeMatches.length) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: PasskeyErrors.credentialExcluded }
+            });
+        }
+
+        let registration;
+        try {
+            registration = await createRegistrationResponse(payload.publicKey, payload.origin);
+        } catch (e) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: e.passkeyErrorCode || PasskeyErrors.unknown }
+            });
+        }
+
+        focusKeeWeb();
+
+        let target;
+        try {
+            target = await selectEntryForPasskeySave(files, payload);
+        } catch {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: '22' }
+            });
+        }
+
+        if (!target?.entry && !target?.group) {
+            return encryptResponse(request, {
+                success: 'true',
+                version: getVersion(request),
+                response: { errorCode: '22' }
+            });
+        }
+
+        let entry;
+        if (target.entry) {
+            const entryFields = passkeyToEntryFields(registration.credential, payload.publicKey, {
+                includeEntryFields: false
+            });
+            for (const [field, value] of Object.entries(entryFields)) {
+                target.entry.setField(field, value, true);
+            }
+            entry = target.entry;
+        } else {
+            const entryFields = passkeyToEntryFields(registration.credential, payload.publicKey);
+            entry = appModel.createNewEntryWithFields(target.group, entryFields);
+        }
+        addPasskeyTag(entry);
+
+        Events.emit('refresh');
+
+        return encryptResponse(request, {
+            success: 'true',
+            version: getVersion(request),
+            response: registration.response
+        });
     },
 
     async 'set-login'(request) {
