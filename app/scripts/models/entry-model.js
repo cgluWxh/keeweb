@@ -460,27 +460,41 @@ class EntryModel extends Model {
         }
     }
 
+    _getOtpUrl(otpUrl) {
+        if (otpUrl?.isProtected) {
+            otpUrl = otpUrl.getText();
+        }
+        if (!otpUrl) {
+            return otpUrl;
+        }
+
+        const secret = otpUrl.replace(/\s/g, '');
+        if (secret && Otp.isSecret(secret)) {
+            return Otp.makeUrl(secret.toUpperCase());
+        }
+        if (otpUrl.toLowerCase().lastIndexOf('otpauth:', 0) === 0) {
+            return otpUrl;
+        }
+
+        // KeeOTP plugin format
+        const args = {};
+        otpUrl.split('&').forEach((part) => {
+            const parts = part.split('=', 2);
+            if (parts.length === 2) {
+                args[parts[0]] = decodeURIComponent(parts[1]).replace(/=/g, '');
+            }
+        });
+        if (args.key) {
+            return Otp.makeUrl(args.key, args.step, args.size);
+        }
+
+        return otpUrl;
+    }
+
     initOtpGenerator() {
         let otpUrl;
         if (this.fields.otp) {
-            otpUrl = this.fields.otp;
-            if (otpUrl.isProtected) {
-                otpUrl = otpUrl.getText();
-            }
-            // called only if secret provided, no formatted url
-            if (Otp.isSecret(otpUrl.replace(/\s/g, ''))) {
-                otpUrl = Otp.makeUrl(otpUrl.replace(/\s/g, '').toUpperCase());
-            } else if (otpUrl.toLowerCase().lastIndexOf('otpauth:', 0) !== 0) {
-                // KeeOTP plugin format
-                const args = {};
-                otpUrl.split('&').forEach((part) => {
-                    const parts = part.split('=', 2);
-                    args[parts[0]] = decodeURIComponent(parts[1]).replace(/=/g, '');
-                });
-                if (args.key) {
-                    otpUrl = Otp.makeUrl(args.key, args.step, args.size);
-                }
-            }
+            otpUrl = this._getOtpUrl(this.fields.otp);
         } else if (this.entry.fields.get('TOTP Seed')) {
             // TrayTOTP plugin format
             let secret = this.entry.fields.get('TOTP Seed');
@@ -526,6 +540,7 @@ class EntryModel extends Model {
     }
 
     setOtpUrl(url) {
+        url = this._getOtpUrl(url);
         this.setField('otp', url ? kdbxweb.ProtectedValue.fromString(url) : undefined);
         this.entry.fields.delete('TOTP Seed');
         this.entry.fields.delete('TOTP Settings');
