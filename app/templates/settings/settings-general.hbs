@@ -139,6 +139,13 @@
             {{#if supportFiles}}<option value="path" {{#ifeq rememberKeyFiles 'path'}}selected{{/ifeq}}>{{res 'setGenRememberKeyFilesPath'}}</option>{{/if}}
         </select>
     </div>
+    <div>
+        <input type="checkbox" class="settings__input input-base settings__general-webauthn-quick-unlock"
+               id="settings__general-webauthn-quick-unlock"
+               {{#if webAuthnQuickUnlock}}checked{{/if}}
+               {{#unless webAuthnQuickUnlockSupported}}disabled{{/unless}} />
+        <label for="settings__general-webauthn-quick-unlock">{{res 'setGenWebAuthnQuickUnlock'}}</label>
+    </div>
     {{#if canClearClipboard}}
     <div>
         <label for="settings__general-clipboard">{{res 'setGenClearClip'}}:</label>

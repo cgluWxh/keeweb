@@ -209,3 +209,19 @@ kdbxweb.ProtectedValue.fromBase64 = function (base64) {
     const bytes = kdbxweb.ByteUtils.base64ToBytes(base64);
     return kdbxweb.ProtectedValue.fromBinary(bytes);
 };
+
+kdbxweb.Credentials.prototype.getCompositeHash = function () {
+    return this.getHash().then((hash) => {
+        return kdbxweb.ByteUtils.bytesToBase64(hash);
+    });
+};
+
+kdbxweb.Credentials.fromCompositeHash = function (hashBase64) {
+    const credentials = new kdbxweb.Credentials(null);
+    const hash = kdbxweb.ByteUtils.base64ToBytes(hashBase64);
+    const protectedHash = kdbxweb.ProtectedValue.fromBinary(kdbxweb.ByteUtils.arrayToBuffer(hash));
+    credentials.getHash = () => {
+        return Promise.resolve(kdbxweb.ByteUtils.arrayToBuffer(protectedHash.getBinary()));
+    };
+    return credentials;
+};

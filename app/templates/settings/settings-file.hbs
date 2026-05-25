@@ -56,6 +56,9 @@
     {{/if}}
 
     <h2>{{res 'settings'}}</h2>
+    {{#if quickUnlockOpened}}
+    <p>{{res 'setFileQuickUnlockCredentials'}}</p>
+    {{else}}
     <label for="settings__file-master-pass" class="settings__file-master-pass-label input-base">{{res 'setFilePass'}}:
         <span class="settings__file-master-pass-warning">
             <i class="fa fa-exclamation-triangle"></i> <span id="settings__file-master-pass-warning-text">{{res 'setFilePassChange'}}</span>
@@ -100,6 +103,7 @@
                 <option value="refresh">{{res 'setFileRefreshYubiKeyList'}}</option>
             </select>
         </p>
+    {{/if}}
     {{/if}}
 
     <h2>{{res 'setFileNames'}}</h2>

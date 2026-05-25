@@ -434,6 +434,7 @@
   "setGenNoRememberKeyFiles": "Nicht merken",
   "setGenRememberKeyFilesData": "Im internen App-Speicher ablegen",
   "setGenRememberKeyFilesPath": "Nur Speicherort der Schlüsseldateien merken",
+  "setGenWebAuthnQuickUnlock": "Passkey-Schnellentsperrung verwenden, falls unterstützt",
   "setGenLockInactive": "Wenn die App inaktiv ist",
   "setGenNoAutoLock": "Nicht automatisch sperren",
   "setGenLockMinutes": "Nach {} Minuten",

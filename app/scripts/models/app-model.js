@@ -20,7 +20,7 @@ import { DateFormat } from 'comp/i18n/date-format';
 import { Launcher } from 'comp/launcher';
 import { UrlFormat } from 'util/formatting/url-format';
 import { IdGenerator } from 'util/generators/id-generator';
-import { decryptKeyFileHash, encryptKeyFileHash } from 'util/data/key-file-cache-crypto';
+import { QuickUnlockCrypto } from 'util/data/quick-unlock-crypto';
 import { Locale } from 'util/locale';
 import { Logger } from 'util/logger';
 import { noop } from 'util/fn';
@@ -696,18 +696,10 @@ class AppModel {
     openFileWithData(params, callback, fileInfo, data, updateCacheOnSuccess) {
         const logger = new Logger('open', params.name);
         let needLoadKeyFile = false;
-        let needDecryptKeyFileHash = false;
         if (!params.keyFileData && fileInfo && fileInfo.keyFileName) {
-            if (
-                this.settings.rememberKeyFiles === 'data' &&
-                (fileInfo.keyFileHash || fileInfo.keyFileHashEncrypted)
-            ) {
+            if (this.settings.rememberKeyFiles === 'data' && fileInfo.keyFileHash) {
                 params.keyFileName = fileInfo.keyFileName;
-                if (fileInfo.keyFileHashEncrypted) {
-                    needDecryptKeyFileHash = true;
-                } else {
-                    params.keyFileData = FileModel.createKeyFileWithHash(fileInfo.keyFileHash);
-                }
+                params.keyFileData = FileModel.createKeyFileWithHash(fileInfo.keyFileHash);
             } else if (this.settings.rememberKeyFiles === 'path' && fileInfo.keyFilePath) {
                 params.keyFileName = fileInfo.keyFileName;
                 params.keyFilePath = fileInfo.keyFilePath;
@@ -759,30 +751,15 @@ class AppModel {
             }
             const rev = params.rev || (fileInfo && fileInfo.rev);
             this.setFileOpts(file, params.opts);
-            this.addToLastOpenFiles(file, rev, params)
-                .catch((err) => {
-                    logger.error('Error saving key file cache', err);
-                })
-                .then(() => {
-                    this.addFile(file);
-                    callback(null, file);
-                    this.fileOpened(file, data, params);
-                });
+            this.addToLastOpenFiles(file, rev);
+            this.addFile(file);
+            callback(null, file);
+            this.fileOpened(file, data, params);
         };
         const open = () => {
             file.open(params.password, data, params.keyFileData, openComplete);
         };
-        if (needDecryptKeyFileHash) {
-            decryptKeyFileHash(fileInfo.keyFileHashEncrypted, params.password)
-                .then((keyFileHash) => {
-                    params.keyFileData = FileModel.createKeyFileWithHash(keyFileHash);
-                    open();
-                })
-                .catch((err) => {
-                    logger.info('Error decrypting key file cache', err);
-                    open();
-                });
-        } else if (needLoadKeyFile) {
+        if (needLoadKeyFile) {
             Storage.file.load(params.keyFilePath, {}, (err, data) => {
                 if (err) {
                     logger.info('Storage load error', err);
@@ -816,7 +793,7 @@ class AppModel {
         });
     }
 
-    async addToLastOpenFiles(file, rev, params) {
+    addToLastOpenFiles(file, rev) {
         this.appLogger.debug(
             'Add last open file',
             file.id,
@@ -826,6 +803,7 @@ class AppModel {
             rev
         );
         const dt = new Date();
+        const oldFileInfo = this.fileInfos.get(file.id);
         const fileInfo = new FileInfoModel({
             id: file.id,
             name: file.name,
@@ -838,29 +816,16 @@ class AppModel {
             syncDate: file.syncDate || dt,
             openDate: dt,
             backup: file.backup,
-            chalResp: file.chalResp
+            chalResp: file.chalResp,
+            quickUnlock: oldFileInfo?.quickUnlock || null
         });
         switch (this.settings.rememberKeyFiles) {
-            case 'data': {
-                const keyFileHash = file.getKeyFileHash();
-                let keyFileHashEncrypted = null;
-                if (keyFileHash && params?.password) {
-                    try {
-                        keyFileHashEncrypted = await encryptKeyFileHash(
-                            keyFileHash,
-                            params.password
-                        );
-                    } catch (e) {
-                        this.appLogger.error('Error encrypting key file cache', e);
-                    }
-                }
+            case 'data':
                 fileInfo.set({
                     keyFileName: file.keyFileName || null,
-                    keyFileHash: null,
-                    keyFileHashEncrypted
+                    keyFileHash: file.getKeyFileHash()
                 });
                 break;
-            }
             case 'path': {
                 const keyFilePath = file.keyFilePath || null;
                 fileInfo.set({
@@ -925,6 +890,57 @@ class AppModel {
         }
         if (this.settings.deviceOwnerAuth) {
             this.saveEncryptedPassword(file, params);
+        }
+        if (this.settings.webAuthnQuickUnlock && !params?.quickUnlock) {
+            this.saveQuickUnlock(file, params);
+        }
+    }
+
+    saveQuickUnlock(file, params) {
+        const fileInfo = this.getFileInfo(file);
+        if (!fileInfo || fileInfo.quickUnlock || !params?.password || file.chalResp) {
+            return;
+        }
+        QuickUnlockCrypto.isSupported()
+            .then((supported) => {
+                if (!supported) {
+                    return null;
+                }
+                return QuickUnlockCrypto.createCredential(file, params);
+            })
+            .then((quickUnlock) => {
+                if (!quickUnlock) {
+                    return;
+                }
+                fileInfo.quickUnlock = quickUnlock;
+                this.fileInfos.save();
+            })
+            .catch((err) => {
+                if (/PRF is not supported/.test(err.message || '')) {
+                    AppSettingsModel.webAuthnQuickUnlock = false;
+                }
+                this.appLogger.info('Error saving quick unlock credential', err);
+            });
+    }
+
+    clearQuickUnlock(id) {
+        const fileInfo = this.fileInfos.get(id);
+        if (fileInfo?.quickUnlock) {
+            fileInfo.quickUnlock = null;
+            this.fileInfos.save();
+        }
+    }
+
+    clearAllQuickUnlock() {
+        let hasQuickUnlock = false;
+        for (const fileInfo of this.fileInfos) {
+            if (fileInfo.quickUnlock) {
+                fileInfo.quickUnlock = null;
+                hasQuickUnlock = true;
+            }
+        }
+        if (hasQuickUnlock) {
+            this.fileInfos.save();
         }
     }
 
@@ -997,8 +1013,6 @@ class AppModel {
                 return callback && callback('File is closed');
             }
             logger.info('Sync finished', err || 'no error');
-            const passwordChanged = file.passwordChanged;
-            const keyFileChanged = file.keyFileChanged;
             file.setSyncComplete(path, storage, err ? err.toString() : null);
             fileInfo.set({
                 name: file.name,
@@ -1011,14 +1025,9 @@ class AppModel {
                 chalResp: file.chalResp
             });
             if (this.settings.rememberKeyFiles === 'data') {
-                const keyFileHashEncrypted =
-                    fileInfo.keyFileName === file.keyFileName && !passwordChanged && !keyFileChanged
-                        ? fileInfo.keyFileHashEncrypted || null
-                        : null;
                 fileInfo.set({
                     keyFileName: file.keyFileName || null,
-                    keyFileHash: null,
-                    keyFileHashEncrypted
+                    keyFileHash: file.getKeyFileHash()
                 });
             }
             if (!this.fileInfos.get(fileInfo.id)) {
@@ -1228,8 +1237,7 @@ class AppModel {
             fileInfo.set({
                 keyFileName: null,
                 keyFilePath: null,
-                keyFileHash: null,
-                keyFileHashEncrypted: null
+                keyFileHash: null
             });
         }
         this.fileInfos.save();
@@ -1240,8 +1248,7 @@ class AppModel {
         fileInfo.set({
             keyFileName: null,
             keyFilePath: null,
-            keyFileHash: null,
-            keyFileHashEncrypted: null
+            keyFileHash: null
         });
         this.fileInfos.save();
     }

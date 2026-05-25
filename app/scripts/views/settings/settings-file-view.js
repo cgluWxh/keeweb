@@ -136,6 +136,7 @@ class SettingsFileView extends View {
             syncError: this.model.syncError,
             syncDate: DateFormat.dtStr(this.model.syncDate),
             password: PasswordPresenter.present(this.model.passwordLength),
+            quickUnlockOpened: this.model.quickUnlockOpened,
             defaultUser: this.model.defaultUser,
             recycleBinEnabled: this.model.recycleBinEnabled,
             backupEnabled: backup && backup.enabled,
@@ -206,6 +207,9 @@ class SettingsFileView extends View {
     }
 
     validatePassword(continueCallback) {
+        if (this.model.quickUnlockOpened) {
+            return true;
+        }
         if (!this.model.passwordLength) {
             Alerts.yesno({
                 header: Locale.setFileEmptyPass,

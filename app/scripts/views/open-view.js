@@ -16,6 +16,7 @@ import { Features } from 'util/features';
 import { UrlFormat } from 'util/formatting/url-format';
 import { Locale } from 'util/locale';
 import { Logger } from 'util/logger';
+import { QuickUnlockCrypto } from 'util/data/quick-unlock-crypto';
 import { InputFx } from 'util/ui/input-fx';
 import { OpenConfigView } from 'views/open-config-view';
 import { StorageFileListView } from 'views/storage-file-list-view';
@@ -63,6 +64,7 @@ class OpenView extends View {
     busy = false;
     currentSelectedIndex = -1;
     encryptedPassword = null;
+    quickUnlock = null;
 
     constructor(model) {
         super(model);
@@ -148,7 +150,8 @@ class OpenView extends View {
             fileData: null,
             rev: null,
             opts: null,
-            chalResp: null
+            chalResp: null,
+            quickUnlock: false
         };
     }
 
@@ -193,7 +196,7 @@ class OpenView extends View {
         }
         switch (this.model.settings.rememberKeyFiles) {
             case 'data':
-                if (fileInfo.keyFileHash || fileInfo.keyFileHashEncrypted) {
+                if (fileInfo.keyFileHash) {
                     return { keyFileName: fileInfo.keyFileName, keyFilePath: null };
                 }
                 break;
@@ -269,6 +272,7 @@ class OpenView extends View {
                                 this.params.keyFileName = null;
                             }
                             this.encryptedPassword = null;
+                            this.quickUnlock = null;
                             this.displayOpenFile();
                             this.displayOpenKeyFile();
                             this.displayOpenDeviceOwnerAuth();
@@ -282,6 +286,7 @@ class OpenView extends View {
                             this.params.storage = null;
                             this.params.rev = null;
                             this.encryptedPassword = null;
+                            this.quickUnlock = null;
                             this.importDbWithXml();
                             this.displayOpenDeviceOwnerAuth();
                             success = true;
@@ -377,7 +382,7 @@ class OpenView extends View {
     }
 
     displayOpenDeviceOwnerAuth() {
-        const available = !!this.encryptedPassword;
+        const available = !!this.encryptedPassword || !!this.quickUnlock;
         const passEmpty = !this.passwordInput.length;
         const canUseEncryptedPassword = available && passEmpty;
         this.el
@@ -659,6 +664,7 @@ class OpenView extends View {
         this.params.rev = null;
         this.params.fileData = null;
         this.encryptedPassword = null;
+        this.quickUnlock = null;
         this.displayOpenFile();
         this.displayOpenDeviceOwnerAuth();
         if (keyFilePath) {
@@ -700,7 +706,10 @@ class OpenView extends View {
         this.inputEl.attr('disabled', 'disabled');
         this.busy = true;
         this.params.password = this.passwordInput.value;
-        if (this.encryptedPassword && !this.params.password.length) {
+        if (this.quickUnlock && !this.params.password.length) {
+            logger.debug('Unlocking with WebAuthn PRF');
+            this.unlockWithQuickUnlock();
+        } else if (this.encryptedPassword && !this.params.password.length) {
             logger.debug('Encrypting password using hardware decryption');
             const touchIdPrompt = Locale.bioOpenAuthPrompt.replace('{}', this.params.name);
             const encryptedPassword = kdbxweb.ProtectedValue.fromBase64(
@@ -728,10 +737,47 @@ class OpenView extends View {
                 });
         } else {
             this.params.encryptedPassword = null;
+            this.params.quickUnlock = false;
             this.afterPaint(() => {
                 this.model.openFile(this.params, (err) => this.openDbComplete(err));
             });
         }
+    }
+
+    unlockWithQuickUnlock() {
+        QuickUnlockCrypto.unlock(this.quickUnlock)
+            .then((unlockData) => {
+                this.params.password = {
+                    quickUnlock: true,
+                    credentialsHash: unlockData.credentialsHash
+                };
+                this.params.keyFileData = null;
+                this.params.quickUnlock = true;
+                this.params.encryptedPassword = null;
+                this.model.openFile(this.params, (err) => {
+                    if (err && !err.userCanceled) {
+                        this.clearQuickUnlock();
+                    }
+                    this.openDbComplete(err);
+                });
+            })
+            .catch((err) => {
+                if (err.name === 'AbortError') {
+                    err.userCanceled = true;
+                } else {
+                    this.clearQuickUnlock();
+                }
+                logger.error('Error in WebAuthn quick unlock', err);
+                this.openDbComplete(err);
+            });
+    }
+
+    clearQuickUnlock() {
+        if (this.params.id) {
+            this.model.clearQuickUnlock(this.params.id);
+        }
+        this.quickUnlock = null;
+        this.displayOpenDeviceOwnerAuth();
     }
 
     openDbComplete(err) {
@@ -1157,8 +1203,12 @@ class OpenView extends View {
 
     setEncryptedPassword(fileInfo) {
         this.encryptedPassword = null;
+        this.quickUnlock = null;
         if (!fileInfo.id) {
             return;
+        }
+        if (this.model.settings.webAuthnQuickUnlock && fileInfo.quickUnlock) {
+            this.quickUnlock = fileInfo.quickUnlock;
         }
         switch (this.model.settings.deviceOwnerAuth) {
             case 'memory':

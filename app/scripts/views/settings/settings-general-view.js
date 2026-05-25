@@ -14,6 +14,7 @@ import { SemVer } from 'util/data/semver';
 import { Features } from 'util/features';
 import { DateFormat } from 'comp/i18n/date-format';
 import { Locale } from 'util/locale';
+import { QuickUnlockCrypto } from 'util/data/quick-unlock-crypto';
 import { SettingsLogsView } from 'views/settings/settings-logs-view';
 import { SettingsPrvView } from 'views/settings/settings-prv-view';
 import { mapObject, minmax } from 'util/fn';
@@ -36,6 +37,7 @@ class SettingsGeneralView extends View {
         'change .settings__general-auto-save': 'changeAutoSave',
         'change .settings__general-auto-save-interval': 'changeAutoSaveInterval',
         'change .settings__general-remember-key-files': 'changeRememberKeyFiles',
+        'change .settings__general-webauthn-quick-unlock': 'changeWebAuthnQuickUnlock',
         'change .settings__general-minimize': 'changeMinimize',
         'change .settings__general-minimize-on-field-copy': 'changeMinimizeOnFieldCopy',
         'change .settings__general-audit-passwords': 'changeAuditPasswords',
@@ -76,8 +78,13 @@ class SettingsGeneralView extends View {
 
     constructor(model, options) {
         super(model, options);
+        this.webAuthnQuickUnlockSupported = false;
         this.listenTo(UpdateModel, 'change', this.render);
         this.listenTo(Events, 'theme-applied', this.render);
+        QuickUnlockCrypto.isSupported().then((supported) => {
+            this.webAuthnQuickUnlockSupported = supported;
+            this.render();
+        });
     }
 
     render() {
@@ -97,6 +104,8 @@ class SettingsGeneralView extends View {
             canClearClipboard: !!Launcher,
             clipboardSeconds: AppSettingsModel.clipboardSeconds,
             rememberKeyFiles: AppSettingsModel.rememberKeyFiles,
+            webAuthnQuickUnlock: AppSettingsModel.webAuthnQuickUnlock,
+            webAuthnQuickUnlockSupported: this.webAuthnQuickUnlockSupported,
             supportFiles: !!Launcher,
             autoSave: AppSettingsModel.autoSave,
             autoSaveInterval: AppSettingsModel.autoSaveInterval,
@@ -341,6 +350,15 @@ class SettingsGeneralView extends View {
         const rememberKeyFiles = e.target.value || false;
         AppSettingsModel.rememberKeyFiles = rememberKeyFiles;
         this.appModel.clearStoredKeyFiles();
+    }
+
+    changeWebAuthnQuickUnlock(e) {
+        const webAuthnQuickUnlock = e.target.checked || false;
+        const enabled = webAuthnQuickUnlock && this.webAuthnQuickUnlockSupported;
+        AppSettingsModel.webAuthnQuickUnlock = enabled;
+        if (!enabled) {
+            this.appModel.clearAllQuickUnlock();
+        }
     }
 
     changeMinimize(e) {

@@ -25,8 +25,12 @@ class FileModel extends Model {
 
     open(password, fileData, keyFileData, callback) {
         try {
-            const challengeResponse = ChalRespCalculator.build(this.chalResp);
-            const credentials = new kdbxweb.Credentials(password, keyFileData, challengeResponse);
+            const challengeResponse = password?.quickUnlock
+                ? null
+                : ChalRespCalculator.build(this.chalResp);
+            const credentials = password?.quickUnlock
+                ? kdbxweb.Credentials.fromCompositeHash(password.credentialsHash)
+                : new kdbxweb.Credentials(password, keyFileData, challengeResponse);
             const ts = logger.ts();
 
             kdbxweb.Kdbx.load(fileData, credentials)
@@ -35,7 +39,14 @@ class FileModel extends Model {
                 })
                 .then(() => {
                     this.readModel();
-                    this.setOpenFile({ passwordLength: password ? password.textLength : 0 });
+                    this.setOpenFile({
+                        passwordLength: password?.quickUnlock
+                            ? 0
+                            : password
+                            ? password.textLength
+                            : 0,
+                        quickUnlockOpened: !!password?.quickUnlock
+                    });
                     if (keyFileData) {
                         kdbxweb.ByteUtils.zeroBuffer(keyFileData);
                     }
@@ -742,6 +753,7 @@ FileModel.defineModelProperties({
     active: false,
     created: false,
     demo: false,
+    quickUnlockOpened: false,
     groups: null,
     oldPasswordLength: 0,
     oldKeyFileName: '',
