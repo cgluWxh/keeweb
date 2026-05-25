@@ -4,10 +4,23 @@ import { Features } from 'util/features';
 import { NativeModules } from 'comp/launcher/native-modules';
 
 const logger = new Logger('argon2');
+const kdbxLogger = new Logger('kdbxweb');
 
 const KdbxwebInit = {
     init() {
         kdbxweb.CryptoEngine.setArgon2Impl((...args) => this.argon2(...args));
+        this.patchInvalidDates();
+    },
+
+    patchInvalidDates() {
+        const setDate = kdbxweb.XmlUtils.setDate;
+        kdbxweb.XmlUtils.setDate = (node, date, binary) => {
+            if (date instanceof Date && Number.isNaN(date.getTime())) {
+                kdbxLogger.warn('Ignoring invalid KDBX date', node?.tagName);
+                date = undefined;
+            }
+            return setDate(node, date, binary);
+        };
     },
 
     argon2(password, salt, memory, iterations, length, parallelism, type, version) {

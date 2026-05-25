@@ -417,7 +417,6 @@ class FileModel extends Model {
     }
 
     getData(cb) {
-        this.sanitizeCustomIconDates();
         this.db.cleanup({
             historyRules: true,
             customIcons: true,
@@ -436,28 +435,9 @@ class FileModel extends Model {
     }
 
     getXml(cb) {
-        this.sanitizeCustomIconDates();
         this.db.saveXml(true).then((xml) => {
             cb(xml);
         });
-    }
-
-    sanitizeCustomIconDates() {
-        for (const [id, icon] of this.db.meta.customIcons) {
-            if (!icon.lastModified) {
-                continue;
-            }
-            if (icon.lastModified instanceof Date && !Number.isNaN(icon.lastModified.getTime())) {
-                continue;
-            }
-            const parsedDate = new Date(icon.lastModified);
-            if (!Number.isNaN(parsedDate.getTime())) {
-                icon.lastModified = parsedDate;
-            } else {
-                logger.warn('Removing invalid custom icon lastModified', this.name, id);
-                delete icon.lastModified;
-            }
-        }
     }
 
     getHtml(cb) {
