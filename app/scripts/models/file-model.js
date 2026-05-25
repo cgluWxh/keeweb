@@ -40,11 +40,8 @@ class FileModel extends Model {
                 .then(() => {
                     this.readModel();
                     this.setOpenFile({
-                        passwordLength: password?.quickUnlock
-                            ? 0
-                            : password
-                            ? password.textLength
-                            : 0,
+                        passwordLength:
+                            password?.quickUnlock || !password ? 0 : password.textLength,
                         quickUnlockOpened: !!password?.quickUnlock
                     });
                     if (keyFileData) {

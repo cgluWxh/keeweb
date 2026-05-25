@@ -2,7 +2,7 @@
     {{#each files as |file|}}
     <div class="footer__db footer__db-item {{#unless file.active}}footer__db--dimmed{{/unless}}"
          data-file-id="{{file.id}}" id="footer__db--{{file.id}}">
-        <i class="fa fa-{{#if file.active}}unlock{{else}}lock{{/if}}"></i> {{file.name}}
+        <span class="footer__db-title"><i class="fa fa-{{#if file.active}}unlock{{else}}lock{{/if}}"></i> {{file.name}}</span>
         {{#if file.syncing~}}
             <i class="fa fa-sync-alt spin footer__db-sign"></i>
         {{~else if file.syncError~}}

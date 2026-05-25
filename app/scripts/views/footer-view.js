@@ -13,6 +13,7 @@ class FooterView extends View {
 
     events = {
         'click .footer__db-item': 'showFile',
+        'contextmenu .footer__db-title': 'syncFile',
         'click .footer__db-open': 'openFile',
         'click .footer__btn-help': 'toggleHelp',
         'click .footer__btn-settings': 'toggleSettings',
@@ -80,6 +81,16 @@ class FooterView extends View {
         const fileId = $(e.target).closest('.footer__db-item').data('file-id');
         if (fileId) {
             Events.emit('show-file', { fileId });
+        }
+    }
+
+    syncFile(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const fileId = $(e.target).closest('.footer__db-item').data('file-id');
+        const file = fileId ? this.model.files.get(fileId) : null;
+        if (file) {
+            this.model.syncFile(file);
         }
     }
 

@@ -762,7 +762,7 @@ class OpenView extends View {
                 });
             })
             .catch((err) => {
-                if (err.name === 'AbortError') {
+                if (err.name === 'NotAllowedError') {
                     err.userCanceled = true;
                 } else {
                     this.clearQuickUnlock();
