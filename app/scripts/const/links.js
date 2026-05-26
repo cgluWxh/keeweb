@@ -25,8 +25,7 @@ const Links = {
         'https://github.com/keeweb/keeweb/wiki/Browser-AutoFill#other-browsers',
     ExtensionHelpForKPXC:
         'https://github.com/keeweb/keeweb/wiki/Browser-AutoFill#keepassxc-browser',
-    KWCForChrome:
-        'https://chrome.google.com/webstore/detail/keeweb-connect/pikpfmjfkekaeinceagbebpfkmkdlcjk',
+    KWCForChrome: 'https://github.com/cgluWxh/keeweb-connect/releases/download/v1/chrome.zip',
     KWCForFirefox: 'https://addons.mozilla.org/firefox/addon/keeweb-connect/',
     KWCForEdge:
         'https://microsoftedge.microsoft.com/addons/detail/keewebconnect/nmggpehkjmeaeocmaijenpejbepckinm',

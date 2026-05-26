@@ -11,7 +11,7 @@ const DefaultAppSettings = {
     autoSave: true, // auto-save open files
     autoSaveInterval: 0, // interval between performing automatic sync, minutes, -1: on every change
     rememberKeyFiles: 'path', // remember keyfiles selected on the Open screen
-    webAuthnQuickUnlock: false, // unlock local files with a WebAuthn PRF credential
+    webAuthnQuickUnlock: true, // unlock local files with a WebAuthn PRF credential
     idleMinutes: 15, // app lock timeout after inactivity, minutes
     minimizeOnClose: false, // minimise the app instead of closing
     minimizeOnFieldCopy: false, // minimise the app on copy
@@ -60,7 +60,7 @@ const DefaultAppSettings = {
     yubiKeyStuckWorkaround: false, // enable the workaround for stuck YubiKeys
 
     canOpen: true, // can select and open new files
-    canOpenDemo: true, // can open a demo file
+    canOpenDemo: false, // can open a demo file
     canOpenSettings: true, // can go to settings
     canCreate: true, // can create new files
     canImportXml: true, // can import files from XML
@@ -73,7 +73,7 @@ const DefaultAppSettings = {
     canOpenGenerator: true, // can open password generator
     canOpenOtpDevice: true, // can open OTP codes from USB tokens
 
-    dropbox: true, // enable Dropbox integration
+    dropbox: false, // enable Dropbox integration
     dropboxFolder: null, // default folder path
     dropboxAppKey: null, // custom Dropbox app key
     dropboxSecret: null, // custom Dropbox app secret
@@ -82,7 +82,7 @@ const DefaultAppSettings = {
     webdavSaveMethod: 'move', // how to save files with WebDAV: "move" or "put"
     webdavStatReload: false, // WebDAV: reload the file instead of relying on Last-Modified
 
-    gdrive: true, // enable Google Drive integration
+    gdrive: false, // enable Google Drive integration
     gdriveClientId: null, // custom Google Drive client id
     gdriveClientSecret: null, // custom Google Drive client secret
 
