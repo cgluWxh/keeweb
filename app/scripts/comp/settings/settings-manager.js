@@ -7,6 +7,7 @@ import { Logger } from 'util/logger';
 import { Launcher } from 'comp/launcher';
 
 const logger = new Logger('settings-manager');
+const defaultThemeColor = '#6386ec';
 
 const SettingsManager = {
     neutralLocale: null,
@@ -107,13 +108,26 @@ const SettingsManager = {
             theme = this.selectDarkOrLightTheme(theme);
         }
         document.body.classList.add(this.getThemeClass(theme));
-        const metaThemeColor = document.head.querySelector('meta[name=theme-color]');
-        if (metaThemeColor) {
-            metaThemeColor.content = window.getComputedStyle(document.body).backgroundColor;
-        }
+        this.setMetaThemeColor();
         this.activeTheme = theme;
         logger.debug('Theme changed', theme);
         Events.emit('theme-applied');
+    },
+
+    async setMetaThemeColor() {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        let metaThemeColor = document.head.querySelector('meta[name=theme-color]');
+        if (!metaThemeColor) {
+            metaThemeColor = document.createElement('meta');
+            metaThemeColor.setAttribute('name', 'theme-color');
+            document.head.appendChild(metaThemeColor);
+        }
+        const bodyStyle = window.getComputedStyle(document.body);
+        const themeColor =
+            bodyStyle.getPropertyValue('--background-color').trim() ||
+            bodyStyle.backgroundColor ||
+            defaultThemeColor;
+        metaThemeColor.setAttribute('content', themeColor);
     },
 
     getThemeClass(theme) {
