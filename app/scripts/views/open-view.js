@@ -745,6 +745,7 @@ class OpenView extends View {
     }
 
     unlockWithQuickUnlock() {
+        Events.emit('quick-unlock-started');
         QuickUnlockCrypto.unlock(this.quickUnlock)
             .then((unlockData) => {
                 this.params.password = {
@@ -755,6 +756,7 @@ class OpenView extends View {
                 this.params.quickUnlock = true;
                 this.params.encryptedPassword = null;
                 this.model.openFile(this.params, (err) => {
+                    Events.emit('quick-unlock-finished');
                     if (err && !err.userCanceled) {
                         this.clearQuickUnlock();
                     }
@@ -762,6 +764,7 @@ class OpenView extends View {
                 });
             })
             .catch((err) => {
+                Events.emit('quick-unlock-finished');
                 if (err.name === 'NotAllowedError') {
                     err.userCanceled = true;
                 } else {

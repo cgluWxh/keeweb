@@ -42,6 +42,7 @@ class AppModel {
     memoryPasswordStorage = {};
     fileUnlockPromise = null;
     hardwareDecryptInProgress = false;
+    quickUnlockInProgress = false;
     mainWindowBlurTimer = null;
 
     constructor() {
@@ -58,6 +59,8 @@ class AppModel {
         Events.on('main-window-will-close', this.mainWindowWillClose.bind(this));
         Events.on('hardware-decrypt-started', this.hardwareDecryptStarted.bind(this));
         Events.on('hardware-decrypt-finished', this.hardwareDecryptFinished.bind(this));
+        Events.on('quick-unlock-started', this.quickUnlockStarted.bind(this));
+        Events.on('quick-unlock-finished', this.quickUnlockFinished.bind(this));
 
         this.appLogger = new Logger('app');
         AppModel.instance = this;
@@ -1551,7 +1554,7 @@ class AppModel {
     }
 
     mainWindowBlur() {
-        if (!this.hardwareDecryptInProgress) {
+        if (!this.hardwareDecryptInProgress && !this.quickUnlockInProgress) {
             this.mainWindowBlurTimer = setTimeout(() => {
                 // macOS emits focus-blur-focus event in a row when triggering auto-type from minimized state
                 delete this.mainWindowBlurTimer;
@@ -1580,6 +1583,14 @@ class AppModel {
         if (!Launcher.isAppFocused()) {
             this.rejectPendingFileUnlockPromise('App is not focused after hardware decrypt');
         }
+    }
+
+    quickUnlockStarted() {
+        this.quickUnlockInProgress = true;
+    }
+
+    quickUnlockFinished() {
+        this.quickUnlockInProgress = false;
     }
 }
 
