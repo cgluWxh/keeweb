@@ -21,6 +21,7 @@ import {
     PasskeyErrors,
     createAssertionResponse,
     createRegistrationResponse,
+    findExcludedPasskeys,
     findMatchingPasskeys,
     passkeyToEntryFields,
     validateOrigin
@@ -782,11 +783,11 @@ const ProtocolHandlers = {
         }
 
         const files = getAvailableFiles(request);
-        const excludeMatches = findMatchingPasskeys(
+        const excludeMatches = findExcludedPasskeys(
             files,
             {
                 rpId: payload.publicKey.rp?.id,
-                allowCredentials: payload.publicKey.excludeCredentials || [],
+                excludeCredentials: payload.publicKey.excludeCredentials || [],
                 relatedOrigins: payload.publicKey.relatedOrigins || []
             },
             payload.origin

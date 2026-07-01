@@ -50,6 +50,34 @@ function findMatchingPasskeys(files, publicKey, origin) {
     return passkeys;
 }
 
+function findExcludedPasskeys(files, publicKey, origin) {
+    const excludedCredentialIds = new Set(
+        (publicKey.excludeCredentials || [])
+            .filter(isAllowedCredential)
+            .map((cred) => normalizeBase64Url(cred.id))
+    );
+
+    if (!excludedCredentialIds.size) {
+        return [];
+    }
+
+    const rpId = resolveRpId(publicKey, origin);
+    const passkeys = [];
+    for (const file of files) {
+        file.forEachEntry({ includeDisabled: true }, (entry) => {
+            const passkey = entryToPasskey(entry);
+            if (!passkey || passkey.rpId !== rpId) {
+                return;
+            }
+            if (!excludedCredentialIds.has(normalizeBase64Url(passkey.credentialId))) {
+                return;
+            }
+            passkeys.push(passkey);
+        });
+    }
+    return passkeys;
+}
+
 async function createAssertionResponse(passkey, publicKey, origin) {
     if (!isValidChallenge(publicKey?.challenge)) {
         throw makePasskeyError(PasskeyErrors.invalidChallenge);
@@ -557,6 +585,7 @@ export {
     PasskeyErrors,
     createAssertionResponse,
     createRegistrationResponse,
+    findExcludedPasskeys,
     findMatchingPasskeys,
     makePasskeyError,
     passkeyToEntryFields,
